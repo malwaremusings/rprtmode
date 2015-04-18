@@ -6,8 +6,8 @@ OBJCOPY		= objcopy
 OBJCOPY_FLAGS	= -O binary --image-base=0x100
 
 SRCS		= boot.s boot32.s display.s main.s eh.s interrupts.s i8259.s task.s debug.s exit.s end.s
-INCLS		= protmode.h data.h
-TARGET		= protmode.com
+INCLS		= rprtmode.h data.h
+TARGET		= rprtmode.com
 BIN		= $(TARGET:.com=)
 OBJ		= $(TARGET:.com=.o)
 LST		= $(TARGET:.com=.lst)
@@ -22,7 +22,7 @@ clean::
 
 .PHONY: install
 install: $(TARGET)
-	cp -a protmode.com /mnt/
+	cp -a rprtmode.com /mnt/
 	sync
 
 $(OBJ):	Makefile $(SRCS) $(INCLS)

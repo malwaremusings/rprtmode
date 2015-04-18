@@ -183,7 +183,7 @@ print:
 	movl	%eax,%cr0
 
 	#
-	# far jmp to out 32-bit code in order to load CS with a valid protected mode
+	# far jmp to our 32-bit code in order to load CS with a valid protected mode
 	# selector, instead of our real mode memory segment address.
 	# See you on the other side (boot32.s)...
 	# ... hopefully!

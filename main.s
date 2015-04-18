@@ -1,5 +1,5 @@
 .code32
-.include	"protmode.h"
+.include	"rprtmode.h"
 
 main:
 	call	clear
