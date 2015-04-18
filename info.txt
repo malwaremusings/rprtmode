@@ -1,0 +1,4 @@
+invalid (code segment) stack segment descriptors were causing reset
+	(code non-writable ss segment)
+	(code non-writable ds segment)
+

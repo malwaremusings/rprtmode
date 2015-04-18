@@ -1,0 +1,18 @@
+	.equ	INT_VECT_SIZE,0x04
+	.equ	INT_VECT_OFF,0x00
+	.equ	INT_VECT_SEG,0x02
+
+	.equ	GDT_ENTRY_SIZE,0x08
+	.equ	GDT_ENTRY.BASE0,0x02
+	.equ	GDT_ENTRY.BASE16,0x04
+
+	.equ	GDTR.LIMIT,0x00
+	.equ	GDTR.BASE,0x02
+
+	.equ	IDTR.LIMIT,0x00
+	.equ	IDTR.BASE,0x02
+
+	.equ	LDTR.LIMIT,0x00
+	.equ	LDTR.BASE,0x02
+
+.include	"data.h"
