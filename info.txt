@@ -2,3 +2,39 @@ invalid (code segment) stack segment descriptors were causing reset
 	(code non-writable ss segment)
 	(code non-writable ds segment)
 
+
+64-bit
+======
+
+Dick with IA32_EFER (LME, bit 8) to enable IA-32e mode
+	Start in compat mode
+		Sub-mode determined by L bit in CS selector
+		Clear the D bit in CS selector (doco says so -- D bit specifies 32-bit/16-bit when not in IA-32e mode)
+	1. Create page directory (set CR3), and page tables
+		When PCIDE == 0
+		CR3 -> PML4 table (indexed by bits 47:39, PS must be 0)
+			63:M	reserved (M is MAXPHYADDR. Assume 36 until implementing CPUID check)
+			M-1:12	physical addr of 4KByte aligned PML4 table
+			11:5	ignored
+			4	PCD: Page level cache disable
+			3	PWT: Page level write through
+			2:0	ignored
+
+		PML4 table -> pg dir ptr tab (indexed by bits 38:30, 1Gb page if PS == 1)
+			
+
+		PDPTE -> pg dir (indexed by bits 29:21, 2Mb page if PS == 1)
+		PDE -> pg tab (indexed by bits 20:12, 4Kb page)
+
+	2. Set EFER.LME bit (IA32_EFER.LME == 1)
+	3. Enable PAE (CR4.PAE == 1)
+	4. Enable paging (CR0.PG == 1)
+	
+
+Remove task gates
+Change TSSes
+Make all int handlers 64-bit
+Expand GDTR, LDTR, IDTR, TR to 128-bit (64-bit bases)
+Expand call gate descriptors, TSS descriptors
+
+
