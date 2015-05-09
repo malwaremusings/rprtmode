@@ -7,7 +7,7 @@ SECTIONS
 	*(.text*)
 	*(.rodata*)
 	_etext = .;
-	. = 0x1fe;
+	. = 0x1fc;
 	_id = .;
 	*(.id*)
     } =0x00000000

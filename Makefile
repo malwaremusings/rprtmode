@@ -1,13 +1,17 @@
 
-AS		= as
+#AS		= as
+AS		= i586-mingw32msvc-as
 ASFLAGS		= --32 -march=i486
+LD		= i586-mingw32msvc-ld
+LDFLAGS		=
 
 OBJCOPY		= objcopy
 OBJCOPY_FLAGS	= -O binary --image-base=0x100
 
 SRCS		= boot.s boot32.s paging.s display.s main.s eh.s interrupts.s i8259.s task.s debug.s exit.s end.s
+OBJS		= $(SRCS:.s=.o)
 INCLS		= rprtmode.h data.h
-TARGET		= rprtmode.com
+TARGET		= rprtmode.exe
 BIN		= $(TARGET:.com=)
 OBJ		= $(TARGET:.com=.o)
 LST		= $(TARGET:.com=.lst)
@@ -17,35 +21,34 @@ TARGETDIR	= /home/libvirt/images/
 
 
 .PHONY: all
-all:	$(TARGET)
+all:	$(TARGET) mbr
 
 .PHONY: clean
 clean::
-	rm -f $(LST) $(OBJ) $(BIN) $(TARGET)
+	rm -f $(LST) $(OBJ) $(BIN) $(TARGET) mbr mbr.axf
 
 .PHONY: install
 install: $(TARGET)
 	cp -a rprtmode.com /mnt/
 	sync
 
-$(OBJ):	Makefile $(SRCS) $(INCLS)
-	$(AS) $(ASFLAGS) -a=$(LST) -o $@ $(SRCS)
+$(OBJS):	$(SRCS) $(INCLS)
 
 
-$(BIN): $(OBJ)
-	$(OBJCOPY) $(OBJCOPY_FLAGS) $(OBJ) $(BIN)
+#$(BIN): $(OBJ)
+#	$(OBJCOPY) $(OBJCOPY_FLAGS) $(OBJ) $(BIN)
+#
+$(TARGET): $(OBJS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS)
 
-$(TARGET): $(BIN)
-	dd if=$(BIN) of=$(TARGET) bs=256 skip=1
-
-bootloader: bootloader.o bootloader.ld
-	#objcopy -O binary bootloader.o bootloader
-	ld -m i386pe  -nostartfiles -static --gc-sections -T bootloader.ld --entry 0x7c00 -s -o bootloader.axf bootloader.o
-	objcopy -j .text -O binary bootloader.axf bootloader
+mbr: mbr.o mbr.ld
+	#objcopy -O binary mbr.o mbr
+	ld -m i386pe  -nostartfiles -static --gc-sections -T mbr.ld --entry 0x7c00 -s -o mbr.axf mbr.o
+	objcopy -j .text -O binary mbr.axf mbr
 
 .s.o:
-	$(AS) $(ASFLAGS) -a=$(LST) -o $@ $<
+	$(AS) $(ASFLAGS) -a=$@.lst -o $@ $<
 
 installboot: bootloader
-	dd if=$(FILESYSTEMIMG) bs=512 skip=1 | cat bootloader - > dossywossyfloppy.raw
+	dd if=$(FILESYSTEMIMG) bs=512 skip=1 | cat mbr - > dossywossyfloppy.raw
 	cp dossywossyfloppy.raw $(TARGETDIR)

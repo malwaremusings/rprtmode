@@ -23,47 +23,134 @@
 _start:
 	jmp	__start
 
-dumpword_r:
+
+###
+# dispstr: take near address off stack and print null terminated string
+###
+
+dumpstr:
 	push	%bp
-	movw	%sp,%bp
+	mov	%sp,%bp
 
-	pushw	%ax
-	pushw	%bx
-	pushw	%cx
-	pushw	%dx
+	push	%ax
+	push	%bx
+	push	%si
 
-	movw	$0x04,%cx
-	movw	0x04(%bp),%bx
-	movb	$0x02,%ah
-nextnibble_r:
-	movb	%bl,%dl
-	andb	$0x0f,%dl
-	addb	$0x30,%dl
+	mov	0x4(%bp),%si
+	mov	$0x0e,%ah
+	mov	$0x0007,%bx
 
-	cmpb	$0x39,%dl
-	jbe	printable_r
-	addb	$0x27,%dl
-printable_r:
-	int	$0x21
-	shr	$0x04,%bx
-	loop	nextnibble_r
+    .Lnxtchar:
+	lodsb
+	test	%al,%al
+	jz	.Leos
+	int	$0x10
+	jmp	.Lnxtchar
 
-	popw	%dx
-	popw	%cx
-	popw	%bx
-	popw	%ax
+    .Leos:
+	pop	%si
+	pop	%bx
+	pop	%ax
 
-	movw	%bp,%sp
-	popw	%bp
-	ret
+	mov	%bp,%sp
+	pop	%bp
+	ret	$2
+
+
+###
+# dispword:
+###
+
+dumpword:
+	push	%bp
+	mov	%sp,%bp
+	sub	$0x6,%sp
+
+	push	%ax
+	push	%cx
+	push	%dx
+	push	%di
+	push	%es
+
+	push	%cs
+	pop	%es
+
+	mov	0x04(%bp),%dx
+	lea	(-0x6 + 0x3)(%bp),%di
+
+	mov	$0x04,%cx
+	pushf
+	std
+    .Lnxtnibble:
+	mov	%dx,%ax
+	and	$0x0f,%ax
+	cmp	$0x0a,%ax
+	jb	.Lnotletter
+	add	$0x27,%ax
+    .Lnotletter:
+	add	$0x30,%ax
+	stosb
+	shr	$0x4,%dx
+	loop	.Lnxtnibble
+	popf
+
+	xor	%ah,%ah
+	movb	%ah,(-0x6 + 0x4)(%bp)
+	inc	%di
+
+	push	%di
+	call	dispstr
+
+	pop	%es
+	pop	%di
+	pop	%dx
+	pop	%cx
+	pop	%ax
+
+	add	$0x6,%sp
+	mov	%bp,%sp
+	pop	%bp
+	ret	$2
+
+
+#dumpword_r:
+#	push	%bp
+#	movw	%sp,%bp
+#
+#	pushw	%ax
+#	pushw	%bx
+#	pushw	%cx
+#	pushw	%dx
+#
+#	movw	$0x04,%cx
+#	movw	0x04(%bp),%bx
+#	movb	$0x02,%ah
+#nextnibble_r:
+#	movb	%bl,%dl
+#	andb	$0x0f,%dl
+#	addb	$0x30,%dl
+#
+#	cmpb	$0x39,%dl
+#	jbe	printable_r
+#	addb	$0x27,%dl
+#printable_r:
+#	int	$0x21
+#	shr	$0x04,%bx
+#	loop	nextnibble_r
+#
+#	popw	%dx
+#	popw	%cx
+#	popw	%bx
+#	popw	%ax
+#
+#	movw	%bp,%sp
+#	popw	%bp
+#	ret
 
 __start:
 	push	%cs
-	call	dumpword_r
+	call	dumpword
 	add	$0x02,%sp
-
-	movb	$0x01,%ah
-	int	$0x21
 
 	# realmode_switch_hook
 	cli				# disable ints
@@ -101,8 +188,7 @@ loopme:
 disabled:
 	movw	$di,%dx
 print:
-	movb	$0x09,%ah
-	int	$0x21
+	call	dumpstr
 
 	call	mask_all_ints
 
@@ -136,7 +222,7 @@ print:
 	movw	%ax,rbase2
 
 	push	%ss
-	call	dumpword_r
+	call	dumpword
 
 	seg2linear %cs,$text32,jmpoff0
 
@@ -253,7 +339,7 @@ text16:
 
 	movw	oldsp,%sp
 	push	%sp
-	call	dumpword_r
+	call	dumpword
 
 	movw	$0xb800,%cx
 	movw	%cx,%es
@@ -265,15 +351,8 @@ text16:
 
 	call	unmask_all_ints
 
-	sti
-
-	mov	$0x01,%ah
-	int	$0x21
-
-	xorw	%ax,%ax
-	int	$0x21
-
-	int	$0x20
+	cli
+	halt
 
 	nop
 
@@ -881,3 +960,132 @@ idt:
 	.short	0x0000			# Offset 16 - 31
 
 idtend:
+
+
+
+
+
+###
+# bootloader.s:
+#     Load ourselves from disk
+###
+
+.text		# section declaration
+.code16		# code section with 16-bit operands
+
+	jmp	__code
+
+	cli
+	hlt
+
+    .Lint13err:
+	mov	$int13errstr,%ax
+	jmp	.Lstrhalt
+
+    .Lfilenotfound:
+	mov	$filenotfoundstr,%ax
+	jmp	.Lstrhalt
+	
+
+###
+# loadsects: load contiguous sectors from disk
+#     loadsects(void *buffseg,void *buffoff,int startsect,int count)
+###
+
+loadsects:
+	push	%bp
+	mov	%sp,%bp
+	sub	$0x6,%sp
+
+	push	%bx
+	push	%cx
+	push	%dx
+	push	%es
+
+	#
+	# get sectors per cylinder
+	#   (tracksize * numheads)
+	#
+
+	xor	%dx,%dx
+	mov	tracksize,%ax
+	mulw	numheads
+
+	#
+	# divide by sec per cyl
+	#
+
+	mov	%ax,%bx
+	xor	%dx,%dx
+	mov	0x8(%ebp),%ax
+	div	%bx
+
+	#
+	# %ax is cyl
+	# %dx is sector within cyl
+	#
+	and	$0x3ff,%ax
+	mov	%ax,-0x02(%bp)
+	mov	%ax,%cx
+	xchg	%ch,%cl
+	shl	$0x6,%cl
+
+	#
+	# divide sector by sectors per track
+	#
+	mov	%dx,%ax
+	xor	%dx,%dx
+	mov	tracksize,%bx
+	div	%bx
+
+	#
+	# %ax is head
+	# %dx is sec (zero based)
+	#
+
+	and	$0x3f,%dx
+	or	%dl,%cl
+	inc	%cl
+
+	mov	%ax,-0x04(%bp)
+	mov	%dx,-0x06(%bp)
+
+	mov	%al,%dh
+	mov	$0x00,%dl
+
+	mov	$0x0201,%ax
+	mov	0x04(%bp),%bx
+	mov	%bx,%es
+	mov	0x06(%bp),%bx
+
+	int	$0x13
+
+	pop	%es
+	pop	%dx
+	pop	%cx
+	pop	%bx
+
+	add	$0x6,%sp
+	mov	%bp,%sp
+	pop	%bp
+	ret	$6
+
+
+.section .rodata
+welcome:
+	.asciz	"Loading... "
+okstr:
+	.asciz	"Ok\r\n"
+int13errstr:
+	.asciz	"int 0x13 failed\r\n"
+filename:
+	.ascii	"PLAN    A  "
+filenotfoundstr:
+	.asciz	"File not found\r\n"
+dbgmsg:
+	.asciz	"!"
+badhexstr:
+	.asciz	"Bad hex character\r\n"
+
+.section .id
+	.short	0xaa55

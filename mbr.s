@@ -1,5 +1,5 @@
 ###
-# bootloader.s:
+# mbr.s:
 #     Load ourselves from disk
 ###
 
@@ -84,33 +84,6 @@ __code:
 	push	%es
 	call	loadsects
 
-	#push	%ax
-	#div	%bx
-
-	# %ax is cyl num
-	# %dx is sector within cyl
-
-	#mov	%al,%ch		# cyl (7:0)
-	#shl	$0x6,%ah
-	#mov	%ah,%cl		# cyl (9:8)
-
-	#mov	%dx,%ax
-	#xor	%dx,%dx
-
-	#mov	tracksize,%bx
-	#div	%bx
-
-	#mov	%al,%dh		# head
-	#and	$0x3f,%dl	# 6-bit sector number
-	#or	%dl,%cl		# sector
-	#inc	%cl		# one based, not zero based
-	#xor	%dl,%dl		# drive
-
-	#mov	$0x0201,%ax
-	#mov	$0x0070,%bx
-	#mov	%bx,%es
-	#xor	%bx,%bx
-	#int	$0x13
 	cmp	$0x0001,%ax
 	jne	.Lint13err
 
@@ -138,12 +111,67 @@ __code:
 	jmp	.Lfilenotfound
 
     .Lfilefound:
-
 	mov	$okstr,%ax
+
     .Lstrhalt:
 	push	%ax
 	call	dispstr
-halt:
+
+loadfile:
+	# load it dear henry
+
+	#
+	# calculate number of sectors
+	#
+
+	movw	%es:0x1e(%di),%dx
+	movw	%es:0x1c(%di),%ax
+	divw	sectsize
+	inc	%ax
+	mov	%ax,%cx
+
+	#
+	# calculate starting logical sector
+	#
+
+	xor	%dx,%dx
+	mov	%es:0x1a(%di),%ax
+
+	xor	%bh,%bh
+	movb	clustsize,%bl
+	mul	%bx
+
+	#
+	# need to increment starting logical sector by 3 for some reason
+	# may be related to file area starting at cluster 2
+	# the extra 1 may be logical sectors start at 1?
+	#
+	inc	%ax
+	inc	%ax
+	inc	%ax
+
+	xor	%bx,%bx
+	push	$0x0001
+	push	%ax
+	push	%bx
+	push	%es
+	call	loadsects
+	cmp	$0x0001,%ax
+	jne	fileloaderr
+	mov	$fileloadok,%ax
+        jmp	.Lstrhalt2
+    .Lfileloaderr:
+	mov	$fileloaderr,%ax
+    .Lstrhalt2:
+	push	%ax
+	call	dispstr
+	
+	movw	%es:(0x0000),%ax
+	call	dispworddbg
+
+	movw	%es:(0x0002),%ax
+	call	dispworddbg
+
 	cli
 	hlt
 
@@ -156,7 +184,7 @@ halt:
 	jmp	.Lstrhalt
 	
 
-.ifdef DEBUG
+#.ifdef DEBUG
 dispworddbg:
 	push	%ax
 	push	%bx
@@ -183,7 +211,7 @@ nextnibble:
 	pop	%bx
 	pop	%ax
 	ret
-.endif
+#.endif
 	
 
 ###
@@ -347,6 +375,13 @@ loadsects:
 	mov	%bx,%es
 	mov	0x06(%bp),%bx
 
+	push	%ax
+	mov	%cx,%ax
+	call	dispworddbg
+	mov	%dx,%ax
+	call	dispworddbg
+	pop	%ax
+
 	int	$0x13
 
 	pop	%es
@@ -371,10 +406,10 @@ filename:
 	.ascii	"PLAN    A  "
 filenotfoundstr:
 	.asciz	"File not found\r\n"
-dbgmsg:
-	.asciz	"!"
-badhexstr:
-	.asciz	"Bad hex character\r\n"
+fileloadok:
+	.asciz	"F"
+fileloaderr:
+	.asciz	"E"
 
 .section .id
-	.short	0xaa55
+	.long	0xaa550000
