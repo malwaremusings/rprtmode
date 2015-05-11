@@ -62,13 +62,27 @@ __code:
 	xor	%dx,%dx
 
 	# %ax == number sectors per cylinder
-	mov	%ax,%bx
+	#mov	%ax,%bx
 
 	mov	fatsize,%ax
 	xor	%ch,%ch
 	mov	numfats,%cl
 	mul	%cx
 	add	numres,%ax
+
+	#
+	# %ax is 1st sector of root directory
+	#
+
+	movw	%ax,%cx			# first sect of root dir
+	xor	%dx,%dx
+	movw	rootdirnum,%ax
+	shl	$0x5,%ax
+	divw	sectsize
+	addw	%cx,%ax			# %ax is first file data sector
+	movw	%ax,firstfiledatasect
+
+	call	dispworddbg
 
 	#
 	# load the 1st sector of the root directory
@@ -79,7 +93,7 @@ __code:
 	xor	%bx,%bx
 
 	push	$0001
-	push	%ax
+	push	%cx
 	push	%bx
 	push	%es
 	call	loadsects
@@ -87,6 +101,16 @@ __code:
 	cmp	$0x0001,%ax
 	jne	.Lint13err
 
+	push	$0x0001
+	push	$0x0b3f
+	push	%bx
+	push	%es
+	call	loadsects
+
+	#movw	%es:(%bx),%ax
+	#call	dispworddbg
+	#movw	%es:0x02(%bx),%ax
+	#call	dispworddbg
 
 	#
 	# search for file name
@@ -137,9 +161,7 @@ loadfile:
 	xor	%dx,%dx
 	mov	%es:0x1a(%di),%ax
 
-	xor	%bh,%bh
-	movb	clustsize,%bl
-	mul	%bx
+	#call	dispworddbg
 
 	#
 	# need to increment starting logical sector by 3 for some reason
@@ -166,11 +188,11 @@ loadfile:
 	push	%ax
 	call	dispstr
 	
-	movw	%es:(0x0000),%ax
-	call	dispworddbg
+	#movw	%es:(0x0000),%ax
+	#call	dispworddbg
 
-	movw	%es:(0x0002),%ax
-	call	dispworddbg
+	#movw	%es:(0x0002),%ax
+	#call	dispworddbg
 
 	cli
 	hlt
@@ -304,6 +326,35 @@ dispword:
 	ret	$2
 .endif
 
+
+.if 0
+###
+# loadclust: load a cluster
+#     loadclust(int clustnum)
+###
+	push	%bp
+	mov	%sp,%bp
+
+	push	%ax
+	movw	0x4(%bp),%ax
+	xor	%bh,%bh
+	movb	clustsize,%bl
+	mul	%bx
+
+	#
+	# cluster 2 is first non-reserved logical sector
+	# 
+	inc	%ax
+	inc	%ax
+	addw	numres,%ax
+
+	pop	%ax
+	mov	%bp,%sp
+	pop	%bp
+	ret	$2
+.endif
+
+
 ###
 # loadsects: load contiguous sectors from disk
 #     loadsects(void *buffseg,void *buffoff,int startsect,int count)
@@ -375,12 +426,12 @@ loadsects:
 	mov	%bx,%es
 	mov	0x06(%bp),%bx
 
-	push	%ax
-	mov	%cx,%ax
-	call	dispworddbg
-	mov	%dx,%ax
-	call	dispworddbg
-	pop	%ax
+	#push	%ax
+	#mov	%cx,%ax
+	#call	dispworddbg
+	#mov	%dx,%ax
+	#call	dispworddbg
+	#pop	%ax
 
 	int	$0x13
 
@@ -410,6 +461,7 @@ fileloadok:
 	.asciz	"F"
 fileloaderr:
 	.asciz	"E"
-
+firstfiledatasect:			# this is the sector where cluster 2 is
+	.short	0x0000			# and is calculated
 .section .id
 	.long	0xaa550000
