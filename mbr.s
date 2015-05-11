@@ -79,10 +79,16 @@ __code:
 	movw	rootdirnum,%ax
 	shl	$0x5,%ax
 	divw	sectsize
-	addw	%cx,%ax			# %ax is first file data sector
-	movw	%ax,firstfiledatasect
 
-	call	dispworddbg
+	# %ax is number of sectors for root directory
+
+	movw	%ax,rootdirsects
+	push	%ax			# num of sects param to loadsects()
+	addw	%cx,%ax
+
+	# %ax is first file data sector
+
+	movw	%ax,firstfiledatasect
 
 	#
 	# load the 1st sector of the root directory
@@ -92,25 +98,14 @@ __code:
 	mov	%bx,%es
 	xor	%bx,%bx
 
-	push	$0001
+	#push	rootdirsects		# pushed above
 	push	%cx
 	push	%bx
 	push	%es
 	call	loadsects
 
-	cmp	$0x0001,%ax
-	jne	.Lint13err
-
-	push	$0x0001
-	push	$0x0b3f
-	push	%bx
-	push	%es
-	call	loadsects
-
-	#movw	%es:(%bx),%ax
-	#call	dispworddbg
-	#movw	%es:0x02(%bx),%ax
-	#call	dispworddbg
+	test	%ax,%ax
+	jne	.Lfileloaderr
 
 	#
 	# search for file name
@@ -118,6 +113,9 @@ __code:
 
 	mov	$filename,%si
 	mov	%bx,%di
+	movw	rootdirsects,%ax
+	mulw	sectsize
+	movw	%ax,%bx
     .Lnextfile:
 	mov	$0x0b,%cx
 	push	%si
@@ -130,14 +128,12 @@ __code:
 	jz	.Lfilefound
 
 	add	$0x20,%di
-	cmp	$0x1200,%di
+	cmp	%bx,%di
 	jb	.Lnextfile
 	jmp	.Lfilenotfound
 
     .Lfilefound:
 	mov	$okstr,%ax
-
-    .Lstrhalt:
 	push	%ax
 	call	dispstr
 
@@ -161,8 +157,6 @@ loadfile:
 	xor	%dx,%dx
 	mov	%es:0x1a(%di),%ax
 
-	#call	dispworddbg
-
 	#
 	# need to increment starting logical sector by 3 for some reason
 	# may be related to file area starting at cluster 2
@@ -178,35 +172,26 @@ loadfile:
 	push	%bx
 	push	%es
 	call	loadsects
-	cmp	$0x0001,%ax
+	test	%ax,%ax
 	jne	fileloaderr
 	mov	$fileloadok,%ax
-        jmp	.Lstrhalt2
+        jmp	.Lstrhalt
     .Lfileloaderr:
 	mov	$fileloaderr,%ax
-    .Lstrhalt2:
+    .Lstrhalt:
 	push	%ax
 	call	dispstr
 	
-	#movw	%es:(0x0000),%ax
-	#call	dispworddbg
-
-	#movw	%es:(0x0002),%ax
-	#call	dispworddbg
-
 	cli
 	hlt
 
-    .Lint13err:
-	mov	$int13errstr,%ax
-	jmp	.Lstrhalt
-
     .Lfilenotfound:
+	movw	%di,%ax
 	mov	$filenotfoundstr,%ax
 	jmp	.Lstrhalt
 	
 
-#.ifdef DEBUG
+.ifdef DEBUG
 dispworddbg:
 	push	%ax
 	push	%bx
@@ -233,7 +218,7 @@ nextnibble:
 	pop	%bx
 	pop	%ax
 	ret
-#.endif
+.endif
 	
 
 ###
@@ -368,6 +353,7 @@ loadsects:
 	push	%bx
 	push	%cx
 	push	%dx
+	push	%di
 	push	%es
 
 	#
@@ -384,8 +370,14 @@ loadsects:
 	#
 
 	mov	%ax,%bx
+	mov	0x06(%bp),%di
+	mov	0x08(%ebp),%ax
+	mov	0x0a(%ebp),%cx
+    .Lnextsect:
+	push	%ax
+	push	%bx
+	push	%cx
 	xor	%dx,%dx
-	mov	0x8(%ebp),%ax
 	div	%bx
 
 	#
@@ -424,18 +416,25 @@ loadsects:
 	mov	$0x0201,%ax
 	mov	0x04(%bp),%bx
 	mov	%bx,%es
-	mov	0x06(%bp),%bx
-
-	#push	%ax
-	#mov	%cx,%ax
-	#call	dispworddbg
-	#mov	%dx,%ax
-	#call	dispworddbg
-	#pop	%ax
+	mov	%di,%bx
 
 	int	$0x13
+	pop	%cx
+	pop	%bx
+	pop	%ax
+	jc	.Lloadsects_fail
 
+	push	$dot
+	call	dispstr
+
+	inc	%ax
+	add	$0x200,%di
+	loop	.Lnextsect
+
+    .Lloadsects_exit:
+	movw	%cx,%ax
 	pop	%es
+	pop	%di
 	pop	%dx
 	pop	%cx
 	pop	%bx
@@ -443,16 +442,21 @@ loadsects:
 	add	$0x6,%sp
 	mov	%bp,%sp
 	pop	%bp
-	ret	$6
+	ret	$8
+
+    .Lloadsects_fail:
+	push	$fileloaderr
+	call	dispstr
+	jmp	.Lloadsects_exit
 
 
 .section .rodata
 welcome:
-	.asciz	"Loading... "
+	.asciz	"Loading"
+dot:
+	.asciz	"."
 okstr:
-	.asciz	"Ok\r\n"
-int13errstr:
-	.asciz	"int 0x13 failed\r\n"
+	.asciz	" Ok"
 filename:
 	.ascii	"PLAN    A  "
 filenotfoundstr:
@@ -463,5 +467,7 @@ fileloaderr:
 	.asciz	"E"
 firstfiledatasect:			# this is the sector where cluster 2 is
 	.short	0x0000			# and is calculated
+rootdirsects:				# number of sectors for root dir
+	.short	0x0000
 .section .id
 	.long	0xaa550000
